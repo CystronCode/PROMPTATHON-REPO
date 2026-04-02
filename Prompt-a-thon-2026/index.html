@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BIT RUNNER — The Soul of a Computer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600..900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100vw;
+            height: 100vh
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="c"></canvas>
+    <script>
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+
+        // ── Audio ──────────────────────────────────────────────────────────────────
+        const AC = new (window.AudioContext || window.webkitAudioContext)();
+        function beep(freq, type, dur, vol = 0.18, delay = 0) {
+            const o = AC.createOscillator(), g = AC.createGain();
+            o.connect(g); g.connect(AC.destination);
+            o.type = type; o.frequency.value = freq;
+            g.gain.setValueAtTime(vol, AC.currentTime + delay);
+            g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + delay + dur);
+            o.start(AC.currentTime + delay); o.stop(AC.currentTime + delay + dur);
+        }
+        function jumpSound() { beep(220, 'square', 0.08, 0.12); beep(440, 'square', 0.08, 0.10, 0.05); }
+        function deathSound() { [200, 160, 120, 80].forEach((f, i) => beep(f, 'sawtooth', 0.12, 0.15, i * 0.1)); }
+        function powerSound() { [300, 400, 500, 600].forEach((f, i) => beep(f, 'triangle', 0.1, 0.2, i * 0.07)); }
+        function checkpointSound() { [440, 550, 660, 880].forEach((f, i) => beep(f, 'square', 0.1, 0.15, i * 0.08)); }
+        function eraSound() { [200, 250, 300, 400, 500].forEach((f, i) => beep(f, 'triangle', 0.15, 0.2, i * 0.1)); }
+        function bgHum(era) {
+            const freqs = [[60, 3], [80, 5], [55, 7], [100, 4], [70, 4], [85, 5], [65, 6], [110, 3]];
+            const [f, d] = freqs[era % 8] || [60, 3];
+            beep(f, 'sine', d, 0.04);
+            beep(f * 1.02, 'triangle', d, 0.02);
+        }
+
+        // ── Resize ────────────────────────────────────────────────────────────────
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ── Era Definitions ───────────────────────────────────────────────────────
+const svgs = [
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="25" y="10" width="50" height="80" rx="10" stroke="#FFF" stroke-width="4" fill="none"/><path d="M40 25 Q50 10 60 25" stroke="#FFF" stroke-width="3" stroke-dasharray="2 4" fill="none"/></svg>',
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="35" stroke="#FFF" stroke-width="4" fill="none"/><path d="M50 15v35 M25 75l25-25 M75 75l-25-25" stroke="#FFF" stroke-width="5"/></svg>',
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="20" r="12" stroke="#FFF" stroke-width="3" fill="none"/><circle cx="20" cy="75" r="12" stroke="#FFF" stroke-width="3" fill="none"/><circle cx="80" cy="75" r="12" stroke="#FFF" stroke-width="3" fill="none"/><path d="M50 32l-22 31 M50 32l22 31 M32 75h36" stroke="#FFF" stroke-dasharray="4 4" stroke-width="3"/></svg>',
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="25" y="25" width="50" height="50" stroke="#FFF" stroke-width="6" fill="none"/><path d="M25 35h-15 M25 65h-15 M75 35h15 M75 65h15 M35 25v-15 M65 25v-15 M35 75v15 M65 75v15" stroke="#FFF" stroke-width="4"/></svg>',
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="15" y="15" width="70" height="70" rx="5" stroke="#FFF" stroke-width="4" fill="none"/><rect x="30" y="15" width="40" height="20" fill="none" stroke="#FFF" stroke-width="2"/><rect x="35" y="65" width="30" height="20" stroke="#FFF" stroke-width="2" fill="none"/></svg>',
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" stroke="#FFF" stroke-width="3" fill="none"/><ellipse cx="50" cy="50" rx="15" ry="45" stroke="#FFF" stroke-width="3" fill="none"/><path d="M5 50h90 M20 30h60 M20 70h60" stroke="#FFF" stroke-width="2"/></svg>',
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="25" y="10" width="50" height="80" rx="8" stroke="#FFF" stroke-width="4" fill="none"/><rect x="30" y="15" width="40" height="60" stroke="#FFF" stroke-width="2" fill="none"/><circle cx="50" cy="82" r="3" fill="#FFF"/></svg>',
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M50 10l35 20v40l-35 20l-35-20v-40z" stroke="#FFF" stroke-width="4" fill="none"/><circle cx="50" cy="50" r="12" fill="#FFF"/><path d="M50 25v13 M35 60l10-10 M65 60l-10-10 L20 40l25 10 M80 40l-25 10" stroke="#FFF" stroke-width="2"/></svg>'
+];
+// generation handled after ERAS
+
+        const ERAS = [
+            {
+                id: 0, name: '1946 · ENIAC', shortName: 'ENIAC',
+                bgTop: '#1a0800', bgMid: '#3d1200', bgBot: '#1a0800',
+                groundCol: '#4a2000', groundLine: '#ff8c00',
+                glowCol: '#ff6600', playerCol: '#ffa040', trailCol: '#ff4400',
+                obstacleCol: '#cc5500', obstacleCol2: '#ffaa00',
+                powerName: 'ENIAC BOOST', powerColor: '#ffcc00',
+                speed: 4, scoreGoal: 800
+            },
+            {
+                id: 1, name: '1956 · TRANSISTOR', shortName: 'TRANSISTOR',
+                bgTop: '#050a14', bgMid: '#0a1428', bgBot: '#050a14',
+                groundCol: '#1a1a2e', groundLine: '#4488ff',
+                glowCol: '#2266cc', playerCol: '#44aaff', trailCol: '#0044cc',
+                obstacleCol: '#334466', obstacleCol2: '#6699ff',
+                powerName: 'TRANSISTOR SHIELD', powerColor: '#00ffff',
+                speed: 5, scoreGoal: 1600
+            },
+            {
+                id: 2, name: '1969 · ARPANET', shortName: 'ARPANET',
+                bgTop: '#0a0f00', bgMid: '#1a2800', bgBot: '#0a0f00',
+                groundCol: '#1a2800', groundLine: '#aacc00',
+                glowCol: '#88aa00', playerCol: '#aad400', trailCol: '#446600',
+                obstacleCol: '#334400', obstacleCol2: '#ccee00',
+                powerName: 'PACKET BOOST', powerColor: '#00ffaa',
+                speed: 6, scoreGoal: 2400
+            },
+            {
+                id: 3, name: '1975 · MICROCHIP', shortName: 'MICROCHIP',
+                bgTop: '#001400', bgMid: '#002800', bgBot: '#001400',
+                groundCol: '#002200', groundLine: '#00ff44',
+                glowCol: '#00cc44', playerCol: '#00ff66', trailCol: '#006622',
+                obstacleCol: '#004422', obstacleCol2: '#00ff88',
+                powerName: "MOORE'S LAW", powerColor: '#88ff00',
+                speed: 7, scoreGoal: 3200
+            },
+            {
+                id: 4, name: '1985 · PC ERA', shortName: 'PC ERA',
+                bgTop: '#0d0d1a', bgMid: '#1a1a33', bgBot: '#0d0d1a',
+                groundCol: '#1a1a2e', groundLine: '#ff00ff',
+                glowCol: '#ff00ff', playerCol: '#ff66ff', trailCol: '#aa00aa',
+                obstacleCol: '#660066', obstacleCol2: '#ff44ff',
+                powerName: 'BOOT DISK', powerColor: '#ff88ff',
+                speed: 8, scoreGoal: 4000
+            },
+            {
+                id: 5, name: '1995 · INTERNET', shortName: 'INTERNET',
+                bgTop: '#000a14', bgMid: '#001428', bgBot: '#000a14',
+                groundCol: '#001428', groundLine: '#0088ff',
+                glowCol: '#0066cc', playerCol: '#44aaff', trailCol: '#0044aa',
+                obstacleCol: '#003366', obstacleCol2: '#0099ff',
+                powerName: 'BROADBAND', powerColor: '#00ccff',
+                speed: 9, scoreGoal: 4800
+            },
+            {
+                id: 6, name: '2007 · MOBILE', shortName: 'MOBILE',
+                bgTop: '#0a0014', bgMid: '#140028', bgBot: '#0a0014',
+                groundCol: '#140028', groundLine: '#aa44ff',
+                glowCol: '#8800ff', playerCol: '#cc66ff', trailCol: '#660099',
+                obstacleCol: '#440066', obstacleCol2: '#bb44ff',
+                powerName: '4G SIGNAL', powerColor: '#dd88ff',
+                speed: 10, scoreGoal: 5600
+            },
+            {
+                id: 7, name: '2020 · AI ERA', shortName: 'AI ERA',
+                bgTop: '#000814', bgMid: '#001428', bgBot: '#000814',
+                groundCol: '#001428', groundLine: '#00ffee',
+                glowCol: '#00ffcc', playerCol: '#00ffee', trailCol: '#009988',
+                obstacleCol: '#004444', obstacleCol2: '#00ffcc',
+                powerName: 'GPT BURST', powerColor: '#00ffaa',
+                speed: 12, scoreGoal: 6400
+            }
+        ];
+
+const eraImages = svgs.map((svg, i) => {
+    let img = new Image();
+    img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg.replace(/#FFF/g, ERAS[i].glowCol));
+    return img;
+});
+
+        // ── Game State ────────────────────────────────────────────────────────────
+        let era = 0, eraObj = ERAS[0];
+        let gameState = 'title'; // title | playing | transition | dead | gameover | victory
+        let score = 0, lives = 3, frame = 0;
+        let checkpointReached = false;
+        let kernelPanic = false;
+        let currentSpeed = 0;
+        let transitionTimer = 0, transitionNextEra = 0;
+        let deathTimer = 0;
+        let arrowHeld = false, arrowJustPressed = false;
+        let bgHumTimer = 0;
+
+        // ── Parallax Layers ───────────────────────────────────────────────────────
+        let bgLayers = [];
+        function initBgLayers() {
+            bgLayers = [];
+            // 3 layers of decorative elements
+            for (let l = 0; l < 3; l++) {
+                bgLayers.push({ layer: l, items: [] });
+                for (let i = 0; i < 8; i++) bgLayers[l].items.push(newBgItem(l, Math.random() * canvas.width));
+            }
+        }
+        function newBgItem(layer, startX) {
+            const e = ERAS[era];
+            return {
+                x: startX !== undefined ? startX : canvas.width + 50,
+                y: 50 + Math.random() * (canvas.height * 0.55),
+                size: (6 + Math.random() * 14) * (1 - layer * 0.2),
+                speed: [0.3, 0.7, 1.2][layer],
+                type: Math.floor(Math.random() * 3),
+                phase: Math.random() * Math.PI * 2
+            };
+        }
+        function updateBgLayers() {
+            bgLayers.forEach(bl => {
+                bl.items.forEach(it => {
+                    it.x -= it.speed;
+                    if (it.x < -60) { Object.assign(it, newBgItem(bl.layer)); }
+                });
+            });
+        }
+        function drawBgLayers() {
+            // background drawing handled directly inside drawBackground natively
+        }
+
+        // ── Ground ────────────────────────────────────────────────────────────────
+        const GROUND_H = () => Math.floor(canvas.height * 0.18);
+        const GROUND_Y = () => canvas.height - GROUND_H();
+
+        // ── Player ────────────────────────────────────────────────────────────────
+        const player = {
+            x: 0, y: 0, vy: 0, r: 18,
+            onGround: false, jumps: 0, maxJumps: 2,
+            dead: false, invincible: false, invTimer: 0,
+            shield: false, shieldTimer: 0,
+            speedBoost: false, speedTimer: 0,
+            scoreDouble: false, doubleTimer: 0,
+            trail: [],
+            init() {
+                this.x = canvas.width * 0.18;
+                this.y = GROUND_Y() - this.r;
+                this.vy = 0; this.onGround = true; this.jumps = 0;
+                this.dead = false; this.invincible = false; this.invTimer = 0;
+                this.shield = false; this.shieldTimer = 0;
+                this.speedBoost = false; this.speedTimer = 0;
+                this.scoreDouble = false; this.doubleTimer = 0;
+                this.agActive = false; this.agTimer = 0; this.agCooldown = 0;
+                this.tunneling = false; this.tunnelTimer = 0;
+                this.trail = [];
+            },
+            jump() {
+                if (this.onGround) {
+                    this.vy = (this.agActive ? 11 : -11);
+                    this.onGround = false;
+                    spawnParticles(this.x, this.y + (this.agActive ? -this.r : this.r), 12, eraObj.trailCol, 'jump');
+                    if (AC.state === 'suspended') AC.resume();
+                    jumpSound();
+                }
+            },
+            update() {
+                if (this.dead) return;
+                // powerup timers
+                if (this.invincible) { this.invTimer--; if (this.invTimer <= 0) this.invincible = false; }
+                if (this.shield) { this.shieldTimer--; if (this.shieldTimer <= 0) this.shield = false; }
+                if (this.speedBoost) { this.speedTimer--; if (this.speedTimer <= 0) this.speedBoost = false; }
+                if (this.scoreDouble) { this.doubleTimer--; if (this.doubleTimer <= 0) this.scoreDouble = false; }
+                if (this.tunneling) { this.tunnelTimer--; this.invincible = true; if (this.tunnelTimer <= 0) { this.tunneling = false; this.invincible = false; } }
+                // gravity
+                if (this.agActive && era !== 7) {
+                    this.agTimer++;
+                    if (this.agTimer >= 300) { this.agActive = false; this.agCooldown = 900; }
+                } else if (!this.agActive && this.agCooldown > 0) {
+                    this.agCooldown--;
+                }
+                let grav = 0.65;
+                if (arrowHeld && !this.agActive && this.vy < 0) grav = 0.25;
+                else if (arrowHeld && this.agActive && this.vy > 0) grav = 0.25;
+                this.vy += (this.agActive ? -grav : grav);
+                this.y += this.vy;
+                const gy = GROUND_Y() - this.r;
+                const cy = this.r + 4;
+                if (!this.agActive && this.y >= gy) {
+                    this.y = gy; this.vy = 0;
+                    if (!this.onGround) spawnParticles(this.x, this.y + this.r, 6, eraObj.trailCol, 'land');
+                    this.onGround = true; this.jumps = 0;
+                } else if (this.agActive && this.y <= cy) {
+                    this.y = cy; this.vy = 0;
+                    if (!this.onGround) spawnParticles(this.x, this.y - this.r, 6, eraObj.trailCol, 'land');
+                    this.onGround = true; this.jumps = 0;
+                } else { this.onGround = false; }
+                if (this.y > gy) { this.y = gy; this.vy = 0; this.onGround = true; this.jumps = 0; }
+                // trail
+                this.trail.push({ x: this.x, y: this.y, a: 0.7 });
+                if (this.trail.length > 12) this.trail.shift();
+                this.trail.forEach(t => t.a -= 0.06);
+            },
+            draw() {
+                if (this.dead) return;
+                const e = eraObj;
+                // trail
+                this.trail.forEach((t, i) => {
+                    ctx.save();
+                    ctx.globalAlpha = Math.max(0, t.a * (i / this.trail.length)) * (this.tunneling ? 0.3 : 1);
+                    ctx.fillStyle = e.trailCol;
+                    ctx.beginPath();
+                    ctx.arc(t.x, t.y, this.r * (i / this.trail.length) * 0.8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+                // shield
+                if (this.shield) {
+                    ctx.save();
+                    ctx.strokeStyle = '#00ffff';
+                    ctx.shadowColor = '#00ffff';
+                    ctx.shadowBlur = 20;
+                    ctx.lineWidth = 3;
+                    ctx.globalAlpha = 0.7 + 0.3 * Math.sin(frame * 0.2);
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.r + 8, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+                // invincibility flash
+                if (this.invincible && frame % 6 < 3) return;
+                // glow layers
+                const pulse = 0.8 + 0.2 * Math.sin(frame * 0.15);
+                [this.r * 2.5, this.r * 1.6, this.r].forEach((rad, i) => {
+                    ctx.save();
+                    ctx.globalAlpha = [0.08, 0.15, 1][i] * pulse * (this.tunneling ? 0.3 : 1);
+                    ctx.fillStyle = i === 2 ? (this.agActive ? '#ffd700' : e.playerCol) : (this.agActive ? '#ccaa00' : e.glowCol);
+                    ctx.shadowColor = this.agActive ? '#ffaa00' : e.glowCol;
+                    ctx.shadowBlur = i === 2 ? 20 : 0;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, rad, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+                // electron orbit
+                const angle = frame * 0.08;
+                ctx.save();
+                ctx.globalAlpha = 0.9;
+                ctx.strokeStyle = e.glowCol;
+                ctx.lineWidth = 1;
+                ctx.shadowColor = e.glowCol;
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, this.r * 1.3, this.r * 0.5, angle, 0, Math.PI * 2);
+                ctx.stroke();
+                // electron dot
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(
+                    this.x + Math.cos(angle) * this.r * 1.3,
+                    this.y + Math.sin(angle) * this.r * 0.5,
+                    3, 0, Math.PI * 2
+                );
+                ctx.fill();
+                ctx.restore();
+                // score double indicator
+                if (this.scoreDouble) {
+                    ctx.save();
+                    ctx.fillStyle = '#88ff00';
+                    ctx.font = '7px "Orbitron", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('x2', this.x, this.y - this.r - 8);
+                    ctx.restore();
+                }
+            }
+        };
+
+        // ── Particles ────────────────────────────────────────────────────────────
+        let particles = [];
+        function spawnParticles(x, y, n, col, type) {
+            for (let i = 0; i < n; i++) {
+                const ang = Math.random() * Math.PI * 2;
+                const spd = 1 + Math.random() * 4;
+                particles.push({
+                    x, y,
+                    vx: Math.cos(ang) * spd * (type === 'jump' ? 1.5 : 1),
+                    vy: Math.sin(ang) * spd - (type === 'jump' ? 3 : 0),
+                    r: 2 + Math.random() * 4,
+                    col, a: 1, life: 40 + Math.random() * 20
+                });
+            }
+        }
+        function updateParticles() {
+            particles = particles.filter(p => {
+                p.x += p.vx; p.y += p.vy; p.vy += 0.15;
+                p.a -= 1 / p.life; p.r *= 0.97;
+                return p.a > 0.01 && p.r > 0.2;
+            });
+        }
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.save();
+                ctx.globalAlpha = p.a;
+                ctx.fillStyle = p.col;
+                ctx.shadowColor = p.col;
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+        }
+
+        // ── Obstacles ────────────────────────────────────────────────────────────
+        let obstacles = [];
+        let scrollX = 0;
+
+        function spawnObstacle() {
+            const e = eraObj;
+            const gh = GROUND_H(), gy = GROUND_Y();
+            const types = {
+                0: () => { // ENIAC: vacuum tubes
+                    const h = 50 + Math.random() * 60;
+                    return { type: 'tube', x: canvas.width + 60, y: gy - h, w: 24, h, col: e.obstacleCol, col2: e.obstacleCol2, pulsed: 0 };
+                },
+                1: () => { // Transistor: gate
+                    const h = 80 + Math.random() * 40, gap = 70 + Math.random() * 30;
+                    return { type: 'gate', x: canvas.width + 60, y: 0, w: 32, h: canvas.height, gap, gapY: gy - h - gap, col: e.obstacleCol, col2: e.obstacleCol2, open: false, timer: 0 };
+                },
+                2: () => { // ARPANET: packet
+                    const flyHigh = Math.random() < 0.4;
+                    return { type: 'packet', x: canvas.width + 60, y: flyHigh ? gy * 0.3 : gy - 50, w: 40, h: 22, col: e.obstacleCol, col2: e.obstacleCol2, vy: flyHigh ? (Math.random() - 0.5) * 2 : 0 };
+                },
+                3: () => { // Microchip: logic wall
+                    const gap = 90;
+                    const gapY = 100 + Math.random() * (canvas.height - 300);
+                    return { type: 'wall', x: canvas.width + 60, y: 0, w: 28, h: canvas.height, gap, gapY, col: e.obstacleCol, col2: e.obstacleCol2, open: false, timer: 0, signalTimer: 0 };
+                }
+            };
+            obstacles.push(types[era % 4]());
+        }
+
+        function updateObstacles() {
+            const spd = eraObj.speed + (player.speedBoost ? 3 : 0);
+            obstacles.forEach(ob => {
+                ob.x -= spd;
+                if (ob.type === 'gate' || ob.type === 'wall') {
+                    ob.timer++;
+                    ob.open = (ob.timer % 120) < 50;
+                }
+                if (ob.type === 'packet') ob.y += ob.vy;
+            });
+            obstacles = obstacles.filter(ob => ob.x > -120);
+        }
+
+        function drawObstacles() {
+            obstacles.forEach(ob => {
+                ctx.save();
+                ctx.shadowColor = ob.col2;
+                ctx.shadowBlur = 10;
+                if (ob.type === 'tube') {
+                    // base
+                    ctx.fillStyle = ob.col;
+                    ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+                    // glass dome
+                    ctx.fillStyle = ob.col2;
+                    ctx.globalAlpha = 0.7;
+                    ctx.beginPath();
+                    ctx.arc(ob.x + ob.w / 2, ob.y, ob.w / 2, Math.PI, 0);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    // filament
+                    ctx.strokeStyle = ob.col2;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(ob.x + 6, ob.y + ob.h * 0.3);
+                    ctx.lineTo(ob.x + ob.w / 2, ob.y + ob.h * 0.5);
+                    ctx.lineTo(ob.x + ob.w - 6, ob.y + ob.h * 0.3);
+                    ctx.stroke();
+                } else if (ob.type === 'gate') {
+                    if (!ob.open) {
+                        ctx.fillStyle = ob.col;
+                        ctx.fillRect(ob.x, 0, ob.w, ob.gapY);
+                        ctx.fillRect(ob.x, ob.gapY + ob.gap, ob.w, canvas.height);
+                        ctx.fillStyle = ob.col2;
+                        ctx.fillRect(ob.x, ob.gapY - 4, ob.w, 4);
+                        ctx.fillRect(ob.x, ob.gapY + ob.gap, ob.w, 4);
+                    } else {
+                        // open gate sides
+                        ctx.fillStyle = ob.col;
+                        ctx.globalAlpha = 0.3;
+                        ctx.fillRect(ob.x, 0, ob.w, canvas.height);
+                    }
+                } else if (ob.type === 'packet') {
+                    ctx.fillStyle = ob.col;
+                    ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+                    ctx.strokeStyle = ob.col2;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(ob.x + 2, ob.y + 2, ob.w - 4, ob.h - 4);
+                    // data lines
+                    ctx.beginPath();
+                    for (let i = 0; i < 3; i++) { ctx.moveTo(ob.x + 6, ob.y + 5 + i * 5); ctx.lineTo(ob.x + ob.w - 6, ob.y + 5 + i * 5); }
+                    ctx.stroke();
+                } else if (ob.type === 'wall') {
+                    if (!ob.open) {
+                        ctx.fillStyle = ob.col;
+                        ctx.fillRect(ob.x, 0, ob.w, ob.gapY);
+                        ctx.fillRect(ob.x, ob.gapY + ob.gap, ob.w, canvas.height);
+                        ctx.fillStyle = ob.col2;
+                        ctx.lineWidth = 2;
+                        ctx.strokeStyle = ob.col2;
+                        ctx.strokeRect(ob.x, 0, ob.w, ob.gapY);
+                        ctx.strokeRect(ob.x, ob.gapY + ob.gap, ob.w, canvas.height - ob.gapY - ob.gap);
+                    } else {
+                        ctx.globalAlpha = 0.2;
+                        ctx.fillStyle = ob.col2;
+                        ctx.fillRect(ob.x, 0, ob.w, canvas.height);
+                        ctx.globalAlpha = 1;
+                        // green signal
+                        ctx.fillStyle = '#00ff44';
+                        ctx.shadowColor = '#00ff44';
+                        ctx.shadowBlur = 20;
+                        ctx.fillRect(ob.x, ob.gapY, ob.w, ob.gap);
+                    }
+                }
+                ctx.restore();
+            });
+        }
+
+        function collides(ob) {
+            const p = player, pr = p.r - 4;
+            if (ob.type === 'tube') {
+                return p.x + pr > ob.x && p.x - pr < ob.x + ob.w && p.y + pr > ob.y && p.y - pr < ob.y + ob.h;
+            }
+            if (ob.type === 'gate' && !ob.open) {
+                const inX = p.x + pr > ob.x && p.x - pr < ob.x + ob.w;
+                const inTop = p.y - pr < ob.gapY;
+                const inBot = p.y + pr > ob.gapY + ob.gap;
+                return inX && (inTop || inBot);
+            }
+            if (ob.type === 'packet') {
+                return p.x + pr > ob.x && p.x - pr < ob.x + ob.w && p.y + pr > ob.y && p.y - pr < ob.y + ob.h;
+            }
+            if (ob.type === 'wall' && !ob.open) {
+                const inX = p.x + pr > ob.x && p.x - pr < ob.x + ob.w;
+                const inTop = p.y - pr < ob.gapY;
+                const inBot = p.y + pr > ob.gapY + ob.gap;
+                return inX && (inTop || inBot);
+            }
+            return false;
+        }
+
+        // ── Powerups ──────────────────────────────────────────────────────────────
+        let powerups = [];
+        function spawnPowerup() {
+            const gy = GROUND_Y();
+            powerups.push({
+                x: canvas.width + 60,
+                y: gy - 80 - Math.random() * 100,
+                r: 14, col: eraObj.powerColor,
+                collected: false
+            });
+        }
+        function updatePowerups() {
+            const spd = eraObj.speed + (player.speedBoost ? 3 : 0);
+            powerups.forEach(pu => pu.x -= spd);
+            powerups = powerups.filter(pu => pu.x > -50 && !pu.collected);
+        }
+        function drawPowerups() {
+            powerups.forEach(pu => {
+                const pulse = 0.8 + 0.2 * Math.sin(frame * 0.12);
+                ctx.save();
+                ctx.shadowColor = pu.col;
+                ctx.shadowBlur = 20;
+                ctx.globalAlpha = 0.3 * pulse;
+                ctx.fillStyle = pu.col;
+                ctx.beginPath();
+                ctx.arc(pu.x, pu.y, pu.r * 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = pu.col;
+                ctx.beginPath();
+                ctx.arc(pu.x, pu.y, pu.r * pulse, 0, Math.PI * 2);
+                ctx.fill();
+                // star/cross
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                [0, 1, 2, 3].forEach(i => {
+                    const a = i * Math.PI / 2 + frame * 0.05;
+                    ctx.beginPath();
+                    ctx.moveTo(pu.x, pu.y);
+                    ctx.lineTo(pu.x + Math.cos(a) * pu.r * 0.7, pu.y + Math.sin(a) * pu.r * 0.7);
+                    ctx.stroke();
+                });
+                ctx.restore();
+            });
+        }
+        function checkPowerupCollect() {
+            powerups.forEach(pu => {
+                const dx = player.x - pu.x, dy = player.y - pu.y;
+                if (Math.sqrt(dx * dx + dy * dy) < player.r + pu.r) {
+                    pu.collected = true;
+                    spawnParticles(pu.x, pu.y, 20, pu.col, 'power');
+                    powerSound();
+                    applyPowerup();
+                }
+            });
+        }
+        function applyPowerup() {
+            if (era === 0) { player.speedBoost = true; player.speedTimer = 180; }
+            else if (era === 1) { player.shield = true; player.shieldTimer = 120; player.invincible = true; player.invTimer = 120; }
+            else if (era === 2) { player.x = Math.min(player.x + 200, canvas.width * 0.5); spawnParticles(player.x, player.y, 30, eraObj.powerColor, 'power'); }
+            else if (era === 3) { player.scoreDouble = true; player.doubleTimer = 300; }
+            else if (era === 4) { lives = Math.min(lives + 1, 3); spawnParticles(player.x, player.y, 30, eraObj.powerColor, 'power'); }
+            else if (era === 5) { player.speedBoost = true; player.speedTimer = 240; }
+            else if (era === 6) { player.scoreDouble = true; player.doubleTimer = 180; }
+            else if (era === 7) { player.invincible = true; player.invTimer = 120; }
+        }
+
+        // ── HUD ───────────────────────────────────────────────────────────────────
+        function drawHUD() {
+            ctx.save();
+            const e = eraObj;
+            // score
+            ctx.fillStyle = e.glowCol;
+            ctx.shadowColor = e.glowCol;
+            ctx.shadowBlur = 8;
+            ctx.font = '11px "Orbitron", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('SCORE', 16, 36);
+            ctx.font = '16px "Orbitron", sans-serif';
+            ctx.fillText(String(Math.floor(score)).padStart(6, '0'), 16, 58);
+            // lives
+            ctx.textAlign = 'center';
+            ctx.font = '10px "Orbitron", sans-serif';
+            ctx.fillText('LIVES', canvas.width / 2, 26);
+            for (let i = 0; i < 3; i++) {
+                ctx.globalAlpha = i < lives ? 1 : 0.2;
+                ctx.fillStyle = i < lives ? e.playerCol : '#333';
+                ctx.shadowColor = e.playerCol;
+                ctx.shadowBlur = i < lives ? 10 : 0;
+                ctx.beginPath();
+                ctx.arc(canvas.width / 2 - 22 + i * 22, 40, 7, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+            // era name
+            ctx.textAlign = 'right';
+            ctx.font = '8px "Orbitron", sans-serif';
+            ctx.fillStyle = e.glowCol;
+            ctx.shadowColor = e.glowCol;
+            ctx.shadowBlur = 6;
+            ctx.fillText(e.name, canvas.width - 16, 36);
+            // era progress bar
+            const prog = Math.min(score, e.scoreGoal) / e.scoreGoal;
+            const bw = 180, bh = 8, bx = canvas.width - 196, by = 44;
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            ctx.fillRect(bx, by, bw, bh);
+            ctx.fillStyle = e.glowCol;
+            ctx.shadowBlur = 4;
+            ctx.fillRect(bx, by, bw * prog, bh);
+            ctx.strokeStyle = e.glowCol;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(bx, by, bw, bh);
+            // powerup indicators
+            let px = 16, py = 80;
+
+            if (era >= 3) {
+                ctx.fillStyle = player.agActive ? '#ffd700' : '#bbbbbb';
+                ctx.font = '7px "Orbitron", sans-serif';
+                ctx.textAlign = 'left';
+                if (player.agActive) {
+                    ctx.fillText('⬆ ANTIGRAVITY ACTIVE', px, py);
+                    py += 16;
+                } else {
+                    let f = 5 - Math.ceil(player.agCooldown / 180);
+                    let s = ''; for (let i = 0; i < 5; i++)s += i < f ? '■' : '□';
+                    ctx.fillText('AG:[' + s + ']', px, py);
+                    py += 16;
+                }
+            }
+
+            if (player.tunneling) {
+                ctx.fillStyle = '#ff00ff';
+                ctx.font = '7px "Orbitron", sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText('QUANTUM TUNNELING ' + (Math.ceil(player.tunnelTimer / 60)) + 's', px, py);
+                py += 16;
+            } else if (score > 10) {
+                ctx.fillStyle = '#aa00aa';
+                ctx.font = '7px "Orbitron", sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText('[Q] QUANTUM TUNNEL (' + (Math.floor(score / 10)) + 's)', px, py);
+                py += 16;
+            }
+            if (player.speedBoost) {
+                const t = player.speedTimer / 180;
+                ctx.fillStyle = eraObj.powerColor;
+                ctx.font = '7px "Orbitron", sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText('SPD ' + (player.speedTimer > 0 ? Math.ceil(player.speedTimer / 60) + 's' : ''), px, py);
+                py += 16;
+            }
+            if (player.shield) {
+                ctx.fillStyle = '#00ffff';
+                ctx.font = '7px "Orbitron", sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText('SHD ' + (Math.ceil(player.shieldTimer / 60)) + 's', px, py);
+                py += 16;
+            }
+            if (player.scoreDouble) {
+                ctx.fillStyle = '#88ff00';
+                ctx.font = '7px "Orbitron", sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText('x2  ' + (Math.ceil(player.doubleTimer / 60)) + 's', px, py);
+            }
+            ctx.restore();
+        }
+
+        // ── Background ────────────────────────────────────────────────────────────
+        function drawBackground() {
+            const e = eraObj;
+            // flat 2d background without 3d gradient
+            ctx.fillStyle = e.bgTop;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background animated carousel image
+            ctx.save();
+            ctx.globalAlpha = 0.15 + 0.05 * Math.sin(frame * 0.05);
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate(frame * 0.005);
+            let s = Math.min(canvas.width, canvas.height) * 0.8;
+            s += Math.sin(frame * 0.03)*30; // subtle scaling animation
+            if(eraImages[era % 8] && eraImages[era % 8].complete) {
+                ctx.drawImage(eraImages[era % 8], -s/2, -s/2, s, s);
+            }
+            ctx.restore();
+            // ground
+            const gy = GROUND_Y(), gh = GROUND_H();
+            const gg = ctx.createLinearGradient(0, gy, 0, canvas.height);
+            gg.addColorStop(0, e.groundLine);
+            gg.addColorStop(0.1, e.groundCol);
+            gg.addColorStop(1, e.groundCol);
+            ctx.fillStyle = gg;
+            ctx.fillRect(0, gy, canvas.width, gh);
+            // ground line glow
+            ctx.save();
+            ctx.strokeStyle = e.groundLine;
+            ctx.shadowColor = e.groundLine;
+            ctx.shadowBlur = 12;
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
+            ctx.restore();
+            // ground scrolling lines
+            ctx.save();
+            ctx.strokeStyle = e.groundLine;
+            ctx.globalAlpha = 0.12;
+            ctx.lineWidth = 1;
+            const lspace = 60, lox = scrollX % lspace;
+            for (let x = -lspace + lox; x < canvas.width + lspace; x += lspace) {
+                ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        // ── Title Screen ──────────────────────────────────────────────────────────
+        let titleAnim = 0;
+        function drawTitleScreen() {
+            titleAnim++;
+            // dark bg
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // star field
+            ctx.save();
+            for (let i = 0; i < 80; i++) {
+                const tx = ((i * 373 + titleAnim * 0.3) % canvas.width + canvas.width) % canvas.width;
+                const ty = (i * 197) % canvas.height;
+                const ta = 0.3 + 0.7 * Math.sin(i + titleAnim * 0.05);
+                ctx.globalAlpha = ta;
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(tx, ty, 1.5, 1.5);
+            }
+            ctx.restore();
+
+            // electron zoom animation (first 120 frames)
+            const zoom = Math.min(titleAnim / 120, 1);
+            const ex = canvas.width * 0.5;
+            const ey = canvas.height * 0.4;
+
+            if (titleAnim < 100) {
+                // zooming electron
+                const esize = 4 + zoom * 30;
+                ctx.save();
+                ctx.shadowColor = '#ff6600';
+                ctx.shadowBlur = 30;
+                ctx.fillStyle = '#ff8800';
+                ctx.beginPath();
+                ctx.arc(ex, ey, esize, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            if (titleAnim > 80) {
+                const ta2 = Math.min((titleAnim - 80) / 60, 1);
+                // explosion burst
+                if (titleAnim > 80 && titleAnim < 120) {
+                    const burst = ((titleAnim - 80) / 40);
+                    for (let i = 0; i < 12; i++) {
+                        const a = i / 12 * Math.PI * 2;
+                        ctx.save();
+                        ctx.globalAlpha = (1 - burst) * 0.8;
+                        ctx.strokeStyle = '#ff8800';
+                        ctx.shadowColor = '#ff8800';
+                        ctx.shadowBlur = 10;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(ex, ey);
+                        ctx.lineTo(ex + Math.cos(a) * burst * 80, ey + Math.sin(a) * burst * 80 * .5);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+                // BIT RUNNER title
+                ctx.save();
+                ctx.globalAlpha = ta2;
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#ff6600';
+                ctx.shadowBlur = 30 * ta2;
+                const fs = Math.min(canvas.width / 12, 52);
+                ctx.font = `${fs}px "Orbitron", sans-serif`;
+                const grad = ctx.createLinearGradient(0, ey - 80, 0, ey + 40);
+                grad.addColorStop(0, '#ffcc00');
+                grad.addColorStop(0.5, '#ff6600');
+                grad.addColorStop(1, '#ff3300');
+                ctx.fillStyle = grad;
+                ctx.fillText('BIT RUNNER', canvas.width / 2, ey - 40);
+                ctx.font = `${Math.min(fs * 0.35, 18)}px "Orbitron", sans-serif`;
+                ctx.fillStyle = '#ffaa44';
+                ctx.shadowBlur = 8;
+                ctx.fillText('THE SOUL OF A COMPUTER', canvas.width / 2, ey - 8);
+                ctx.restore();
+            }
+
+            if (titleAnim > 150) {
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.font = '10px "Orbitron", sans-serif';
+                const blink = Math.sin(titleAnim * 0.08) > 0;
+                ctx.globalAlpha = blink ? 1 : 0.3;
+                ctx.fillStyle = '#ffcc00';
+                ctx.shadowColor = '#ffcc00';
+                ctx.shadowBlur = 8;
+                ctx.fillText('PRESS UP ARROW TO BEGIN', canvas.width / 2, canvas.height * 0.62);
+                ctx.restore();
+                // era list
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.font = '7px "Orbitron", sans-serif';
+                ctx.globalAlpha = 0.6;
+                ERAS.forEach((e, i) => {
+                    ctx.fillStyle = e.glowCol;
+                    ctx.fillText(`ERA ${i + 1}: ${e.name}`, canvas.width / 2, canvas.height * 0.73 + i * 18);
+                });
+                ctx.restore();
+            }
+        }
+
+        // ── Era Transition ────────────────────────────────────────────────────────
+        let transitionAlpha = 0;
+        function startTransition(nextEra) {
+            gameState = 'transition';
+            transitionTimer = 0;
+            transitionNextEra = nextEra;
+            transitionAlpha = 0;
+        }
+        function updateTransition() {
+            transitionTimer++;
+            if (transitionTimer < 40) transitionAlpha = transitionTimer / 40;
+            else if (transitionTimer === 40) {
+                era = transitionNextEra;
+                eraObj = ERAS[era];
+                obstacles = [];
+                powerups = [];
+                particles = [];
+                initBgLayers();
+                checkpointReached = false;
+                player.init();
+                eraSound();
+            }
+            else if (transitionTimer < 80) transitionAlpha = 1;
+            else if (transitionTimer < 120) transitionAlpha = Math.max(0, 1 - (transitionTimer - 80) / 40);
+            else { gameState = 'playing'; transitionAlpha = 0; }
+        }
+        function drawTransition() {
+            ctx.save();
+            ctx.globalAlpha = transitionAlpha;
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (transitionTimer >= 40) {
+                const e = ERAS[transitionNextEra] || eraObj;
+                ctx.globalAlpha = transitionAlpha * 0.95;
+                ctx.textAlign = 'center';
+                ctx.fillStyle = e.glowCol;
+                ctx.shadowColor = e.glowCol;
+                ctx.shadowBlur = 30;
+                ctx.font = '9px "Orbitron", sans-serif';
+                ctx.fillText('ENTERING', canvas.width / 2, canvas.height / 2 - 28);
+                ctx.font = `${Math.min(canvas.width / 16, 28)}px "Orbitron", sans-serif`;
+                ctx.fillText(e.name, canvas.width / 2, canvas.height / 2 + 10);
+                ctx.font = '7px "Orbitron", sans-serif';
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.shadowBlur = 0;
+                ctx.fillText('ERA ' + (transitionNextEra + 1) + ' OF 8', canvas.width / 2, canvas.height / 2 + 36);
+            }
+            ctx.restore();
+        }
+
+        // ── Death Screen ──────────────────────────────────────────────────────────
+        let deathScreenTimer = 0;
+        function drawDeathOverlay() {
+            deathScreenTimer++;
+            ctx.save();
+            ctx.globalAlpha = Math.min(deathScreenTimer / 30, 0.85);
+            ctx.fillStyle = 'rgba(60,0,0,0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.globalAlpha = Math.min(deathScreenTimer / 30, 1);
+            ctx.textAlign = 'center';
+            ctx.font = '20px "Orbitron", sans-serif';
+            ctx.fillStyle = '#ff4444';
+            ctx.shadowColor = '#ff0000';
+            ctx.shadowBlur = 20;
+            ctx.fillText('SYSTEM CRASH!', canvas.width / 2, canvas.height / 2 - 30);
+            ctx.font = '9px "Orbitron", sans-serif';
+            ctx.fillStyle = '#ffaaaa';
+            ctx.shadowBlur = 0;
+            ctx.fillText('LIVES: ' + lives, canvas.width / 2, canvas.height / 2 + 4);
+            if (deathScreenTimer > 60) {
+                const blink = Math.sin(deathScreenTimer * 0.1) > 0;
+                ctx.globalAlpha = blink ? 1 : 0.4;
+                ctx.fillStyle = '#ffcc00';
+                ctx.font = '8px "Orbitron", sans-serif';
+                ctx.fillText('PRESS UP ARROW TO RESTART', canvas.width / 2, canvas.height / 2 + 36);
+            }
+            ctx.restore();
+        }
+
+        function drawGameOver() {
+            const hi = localStorage.getItem('bitrunner_hi') || 0;
+            if (score > hi) localStorage.setItem('bitrunner_hi', Math.floor(score));
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.92)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.textAlign = 'center';
+            ctx.font = '24px "Orbitron", sans-serif';
+            ctx.fillStyle = '#ff2222';
+            ctx.shadowColor = '#ff0000';
+            ctx.shadowBlur = 30;
+            ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 40);
+            ctx.font = '10px "Orbitron", sans-serif';
+            ctx.fillStyle = '#ffaa44';
+            ctx.shadowBlur = 0;
+            ctx.fillText('FINAL SCORE: ' + Math.floor(score), canvas.width / 2, canvas.height / 2);
+            ctx.fillStyle = '#bbff00';
+            ctx.fillText('HIGH SCORE: ' + Math.floor(Math.max(score, hi)), canvas.width / 2, canvas.height / 2 + 14);
+            ctx.font = '8px "Orbitron", sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.fillText('PRESS UP ARROW TO PLAY AGAIN', canvas.width / 2, canvas.height / 2 + 38);
+            ctx.restore();
+        }
+
+        function drawVictory() {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.88)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.textAlign = 'center';
+            // rainbow frames
+            const hue = (frame * 2) % 360;
+            ctx.font = '20px "Orbitron", sans-serif';
+            ctx.fillStyle = `hsl(${hue},100%,60%)`;
+            ctx.shadowColor = `hsl(${hue},100%,60%)`;
+            ctx.shadowBlur = 20;
+            ctx.fillText('ERA 1-8 COMPLETE!', canvas.width / 2, canvas.height / 2 - 50);
+            ctx.font = '10px "Orbitron", sans-serif';
+            ctx.fillStyle = '#ffdd44';
+            ctx.shadowBlur = 0;
+            ctx.fillText('SCORE: ' + Math.floor(score), canvas.width / 2, canvas.height / 2 - 10);
+            ctx.font = '7px "Orbitron", sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.fillText('PRESS UP ARROW TO PLAY AGAIN', canvas.width / 2, canvas.height / 2 + 22);
+            ctx.restore();
+        }
+
+        // ── Spawn scheduling ───────────────────────────────────────────────────────
+        let nextObstacle = 120, nextPowerup = 300;
+        function scheduleSpawns() {
+            if (frame >= nextObstacle) {
+                spawnObstacle();
+                const sf = currentSpeed ? (6 / currentSpeed) : 1;
+                nextObstacle = frame + Math.max(20, Math.floor((80 + Math.random() * 80) * sf));
+            }
+            if (frame >= nextPowerup) {
+                spawnPowerup();
+                nextPowerup = frame + 400 + Math.floor(Math.random() * 200);
+            }
+        }
+
+        // ── Collision check ────────────────────────────────────────────────────────
+        function checkCollisions() {
+            if (player.invincible || player.dead) return;
+            for (const ob of obstacles) {
+                if (collides(ob)) {
+                    if (player.shield) {
+                        player.shield = false;
+                        player.shieldTimer = 0;
+                        player.invincible = true;
+                        player.invTimer = 90;
+                        spawnParticles(player.x, player.y, 20, '#00ffff', 'power');
+                    } else {
+                        triggerDeath();
+                    }
+                    break;
+                }
+            }
+        }
+        function triggerDeath() {
+            if (player.dead) return;
+            player.dead = true;
+            lives--;
+            spawnParticles(player.x, player.y, 40, eraObj.playerCol, 'power');
+            deathSound();
+            if (lives <= 0) { deathScreenTimer = 0; setTimeout(() => { gameState = 'gameover'; }, 1800); }
+            else { deathScreenTimer = 0; gameState = 'dead'; }
+        }
+
+        // ── Input ─────────────────────────────────────────────────────────────────
+        const keys = {};
+        window.addEventListener('keydown', e => {
+            if (e.code === 'ArrowUp') {
+                if (!keys[e.code]) {
+                    keys[e.code] = true;
+                    arrowJustPressed = true;
+                }
+                arrowHeld = true;
+            }
+            if (e.code === 'KeyG' && !keys[e.code]) {
+                keys[e.code] = true;
+                if (era >= 3 && player.agCooldown <= 0 && !player.agActive) {
+                    player.agActive = true;
+                    player.agTimer = 0;
+                    spawnParticles(player.x, player.y, 30, '#ffd700', 'power');
+                    powerSound();
+                }
+            }
+            if (e.code === 'KeyQ' && !keys[e.code]) {
+                keys[e.code] = true;
+                if (!player.tunneling && score > 10) {
+                    player.tunneling = true;
+                    player.tunnelTimer = Math.floor(score * 6); // 10 score = 1 second duration
+                    spawnParticles(player.x, player.y, 40, '#ff00ff', 'power');
+                    powerSound();
+                }
+            }
+        });
+        window.addEventListener('keyup', e => {
+            keys[e.code] = false;
+            if (e.code === 'ArrowUp') arrowHeld = false;
+        });
+        window.addEventListener('touchstart', e => {
+            arrowHeld = true;
+            arrowJustPressed = true;
+        }, { passive: false });
+        window.addEventListener('touchend', e => {
+            arrowHeld = false;
+        });
+
+        // ── Game init/reset ────────────────────────────────────────────────────────
+        function initGame(resetEra) {
+            if (resetEra) { era = 0; eraObj = ERAS[0]; score = 0; lives = 3; kernelPanic = false; }
+            obstacles = []; powerups = []; particles = [];
+            frame = 0; scrollX = 0; nextObstacle = 120; nextPowerup = 300;
+            checkpointReached = false;
+            player.init();
+            initBgLayers();
+        }
+
+        // ── Restart after death ────────────────────────────────────────────────────
+        function respawn() {
+            player.dead = false;
+            player.init();
+            obstacles = []; powerups = [];
+            nextObstacle = frame + 60; nextPowerup = frame + 300;
+        }
+
+        // ── Main loop ──────────────────────────────────────────────────────────────
+        function loop() {
+            requestAnimationFrame(loop);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // hum
+            bgHumTimer++;
+            if (bgHumTimer > 300 && gameState === 'playing') { bgHumTimer = 0; bgHum(era); }
+
+            if (gameState === 'title') {
+                drawTitleScreen();
+                if (arrowJustPressed && titleAnim > 150) {
+                    gameState = 'playing';
+                    initGame(true);
+                    if (AC.state === 'suspended') AC.resume();
+                }
+                arrowJustPressed = false;
+                return;
+            }
+
+            if (gameState === 'gameover') {
+                drawGameOver();
+                if (arrowJustPressed) {
+                    gameState = 'playing';
+                    lives = 3;
+                    initGame(true);
+                }
+                arrowJustPressed = false;
+                return;
+            }
+
+            if (gameState === 'victory') {
+                drawVictory();
+                if (arrowJustPressed) {
+                    gameState = 'playing';
+                    lives = 3;
+                    initGame(true);
+                }
+                arrowJustPressed = false;
+                return;
+            }
+
+            if (gameState === 'transition') {
+                // draw last playing state behind
+                drawBackground();
+                drawObstacles();
+                drawPowerups();
+                drawParticles();
+                player.draw();
+                drawHUD();
+                updateTransition();
+                drawTransition();
+                arrowJustPressed = false;
+                return;
+            }
+
+            if (gameState === 'dead') {
+                drawBackground();
+                drawObstacles();
+                drawPowerups();
+                drawParticles();
+                updateParticles();
+                player.draw();
+                drawHUD();
+                drawDeathOverlay();
+                if (arrowJustPressed && deathScreenTimer > 60) {
+                    respawn();
+                    gameState = 'playing';
+                }
+                arrowJustPressed = false;
+                return;
+            }
+
+            // ── PLAYING ───────────────────────────────────────────────────────────
+            frame++;
+
+            let dynamicSpeed;
+            if (kernelPanic) {
+                dynamicSpeed = 24 + (score - eraObj.scoreGoal) * 0.01;
+            } else {
+                dynamicSpeed = (eraObj.speed + (score / eraObj.scoreGoal) * 3) * 1.8;
+            }
+            currentSpeed = dynamicSpeed + (player.speedBoost ? 3 : 0);
+            scrollX += currentSpeed;
+
+            scheduleSpawns();
+            updateObstacles();
+            updatePowerups();
+            updateParticles();
+
+            // jump input
+            if (arrowJustPressed) player.jump();
+            arrowJustPressed = false;
+
+            player.update();
+            checkCollisions();
+            checkPowerupCollect();
+
+            // scoring
+            const pts = (player.scoreDouble ? 2 : 1);
+            score += pts * 0.6;
+
+            // era progression
+            if (score >= eraObj.scoreGoal) {
+                if (era < ERAS.length - 1) {
+                    checkpointSound();
+                    startTransition(era + 1);
+                } else if (!kernelPanic) {
+                    kernelPanic = true;
+                    eraObj = Object.assign({}, eraObj); // create a copy to mess with locally
+                    eraObj.name = 'KERNEL PANIC';
+                    eraObj.glowCol = '#ff0000';
+                    eraObj.bgTop = '#220000';
+                    eraObj.bgBot = '#220000';
+                    eraObj.groundLine = '#ff0000';
+                    spawnParticles(player.x, player.y, 100, '#ff0000', 'power');
+                    deathSound();
+                }
+            }
+
+            // checkpoint flash
+            if (!checkpointReached && score >= eraObj.scoreGoal * 0.5 && !kernelPanic) {
+                checkpointReached = true;
+                checkpointSound();
+                spawnParticles(player.x, player.y, 30, eraObj.playerCol, 'power');
+            }
+
+            // screen shake + draw
+            ctx.save();
+            if (player.tunneling || player.speedBoost) {
+                ctx.translate((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4);
+            }
+            drawBackground();
+            updateBgLayers();
+            drawObstacles();
+            drawPowerups();
+            drawParticles();
+            player.draw();
+            drawHUD();
+            ctx.restore();
+
+            // checkpoint label
+            if (checkpointReached && frame % 60 < 30) {
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.font = '8px "Orbitron", sans-serif';
+                ctx.fillStyle = '#ffcc00';
+                ctx.shadowColor = '#ffcc00';
+                ctx.shadowBlur = 10;
+                ctx.fillText('✓ CHECKPOINT', canvas.width / 2, canvas.height - GROUND_H() - 50);
+                ctx.restore();
+            }
+        }
+
+        // ── Boot ───────────────────────────────────────────────────────────────────
+        initGame(true);
+        loop();
+    </script>
+</body>
+
+</html>
